@@ -1,0 +1,39 @@
+service: lakshmi-ai-api
+org: lakshmiai2026
+app: lakshmi-ai-api
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: ap-south-1
+  environment:
+    DB_HOST: ${env:DB_HOST, 'lakshmi-db-instance.chcy0oioi9r7.ap-south-1.rds.amazonaws.com'}
+    DB_USER: ${env:DB_USER, 'admin'}
+    DB_PASSWORD: ${env:DB_PASSWORD, 'Lakshmi245806'}
+    DB_NAME: ${env:DB_NAME, 'lakshmi_db'}
+    S3_DATA_BUCKET: ${env:S3_DATA_BUCKET}
+    IMAGE_CLOUDFRONT_DOMAIN: ${env:IMAGE_CLOUDFRONT_DOMAIN}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+          Resource: "arn:aws:s3:::${env:S3_DATA_BUCKET}/*"
+        - Effect: Allow
+          Action:
+            - s3:ListBucket
+          Resource: "arn:aws:s3:::${env:S3_DATA_BUCKET}"
+
+functions:
+  api:
+    handler: lambda_handler.handler
+    timeout: 30
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+          cors: true
