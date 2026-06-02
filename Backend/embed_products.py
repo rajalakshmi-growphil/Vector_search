@@ -1,15 +1,18 @@
 import os
 import re
 import json
-import sqlite3
 import pandas as pd
 from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
+import mysql.connector
+from urllib.parse import urlparse
+
+load_dotenv()
 
 print("Loading model library...")
 model = SentenceTransformer('all-MiniLM-L6-v2')
 print("Model library loaded.")
 
-DB_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), 'vector_search.db'))
 SQL_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), 'Products.sql'))
 
 def parse_sql_insert_values(values_block):
@@ -112,6 +115,38 @@ def parse_sql_insert_values(values_block):
     return final_rows
 
 def main():
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        print("DATABASE_URL is not set in environment variables.")
+        return
+
+    try:
+        parsed = urlparse(db_url)
+        db_name = parsed.path[1:] if parsed.path else ""
+        username = parsed.username or "root"
+        password = parsed.password or ""
+        host = parsed.hostname or "localhost"
+        if host == "localhost":
+            host = "127.0.0.1"
+        port = parsed.port or 3306
+
+        print(f"Pre-checking MySQL connection to {host}:{port}...")
+        temp_conn = mysql.connector.connect(
+            host=host,
+            user=username,
+            password=password,
+            port=port
+        )
+        temp_cursor = temp_conn.cursor()
+        temp_cursor.execute(f"CREATE DATABASE IF NOT EXISTS {db_name}")
+        temp_cursor.close()
+        temp_conn.close()
+
+        print("MySQL database pre-check successful.")
+    except Exception as e:
+        print(f"Database connection pre-check failed: {e}")
+        return
+
     print(f"Reading {SQL_FILE}...")
     with open(SQL_FILE, 'r', encoding='utf-8') as f:
         content = f.read()
@@ -161,34 +196,34 @@ def main():
     
     print("Storing in database...")
     try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS products_vectors (
-                product_id INTEGER PRIMARY KEY,
-                product_name TEXT NOT NULL,
-                vector TEXT NOT NULL,
-                image_name TEXT
-            )
-        """)
-        cursor.execute("DELETE FROM products_vectors")
-        
-        data_to_insert = []
+        temp_data = []
         for idx, row in df.iterrows():
-            product_id = int(row['product_id'])
-            product_name = row['product_name']
-            image_name = row['image_name']
-            vector_json = json.dumps(embeddings[idx])
-            data_to_insert.append((product_id, product_name, vector_json, image_name))
+            temp_data.append({
+                'product_id': int(row['product_id']),
+                'product_name': row['product_name'],
+                'vector': embeddings[idx],
+                'image_name': row['image_name']
+            })
             
-        cursor.executemany("INSERT INTO products_vectors VALUES (?, ?, ?, ?)", data_to_insert)
-        conn.commit()
-        print(f"Success! {len(data_to_insert)} products stored in {DB_FILE}.")
+        json_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'temp_embeddings.json'))
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(temp_data, f)
+            
+        print("Embeddings saved to temporary file. Launching database insertion subprocess...")
+        
+        import subprocess
+        result = subprocess.run(['python', 'insert_to_mysql.py'], capture_output=False)
+        
+        # Clean up
+        if os.path.exists(json_path):
+            os.remove(json_path)
+            
+        if result.returncode == 0:
+            print("Successfully populated product vectors in MySQL database.")
+        else:
+            print(f"Error: insert_to_mysql.py failed with exit code {result.returncode}")
     except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        if 'conn' in locals():
-            conn.close()
+        print(f"Error during storing process: {e}")
 
 if __name__ == "__main__":
     main()

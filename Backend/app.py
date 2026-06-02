@@ -254,15 +254,29 @@ def seed_database_from_sql():
 
 if __name__ == '__main__':
     with app.app_context():
-        # Drop unwanted tables if they exist
+        # Drop old tables to migrate to single table if needed
         try:
-            db.session.execute(db.text("DROP TABLE IF EXISTS product_descriptions;"))
-            db.session.execute(db.text("DROP TABLE IF EXISTS reviews;"))
-            db.session.execute(db.text("DROP TABLE IF EXISTS salt_contents;"))
-            db.session.commit()
-            print("Successfully cleaned up unused tables (product_descriptions, reviews, salt_contents) from database.")
+            inspector = db.inspect(db.engine)
+            tables = inspector.get_table_names()
+            needs_drop = False
+            if "products_vectors" in tables:
+                print("Migration: Old 'products_vectors' table found. Dropping tables for unified schema...")
+                needs_drop = True
+            elif "products" in tables:
+                columns = [c['name'] for c in inspector.get_columns('products')]
+                if 'vector' not in columns:
+                    print("Migration: 'vector' column missing in 'products' table. Dropping tables...")
+                    needs_drop = True
+            
+            if needs_drop:
+                # Explicitly drop both to avoid foreign key issues or clean up properly
+                db.session.execute(db.text("DROP TABLE IF EXISTS products_vectors;"))
+                db.session.execute(db.text("DROP TABLE IF EXISTS products;"))
+                db.session.commit()
+                db.drop_all()
+                print("Successfully dropped old tables.")
         except Exception as e:
-            print(f"Error dropping unused tables: {e}")
+            print(f"Error during schema migration check: {e}")
 
         db.create_all()
         try:
@@ -272,7 +286,8 @@ if __name__ == '__main__':
     
     # Load the vector search engine
     try:
-        vector_engine.load()
+        with app.app_context():
+            vector_engine.load()
     except Exception as e:
         print(f"Error loading vector search engine: {e}")
         

@@ -11,6 +11,7 @@ class Product(db.Model):
     price = db.Column(db.Float)
     rating = db.Column(db.Float)
     description = db.Column(db.Text)
+    vector = db.Column(db.Text, nullable=True)
 
     def __init__(self, name=None, brand=None, image_url=None, price=None, rating=None, description=None):
         self.name = name

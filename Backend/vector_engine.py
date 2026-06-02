@@ -1,11 +1,9 @@
 import os
 import json
-import sqlite3
 import numpy as np
 
 class VectorSearchEngine:
-    def __init__(self, db_path='vector_search.db'):
-        self.db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), db_path))
+    def __init__(self, db_path=None):
         self.model = None
         self.product_ids = []
         self.embeddings = None
@@ -13,10 +11,6 @@ class VectorSearchEngine:
         self.image_names = []
 
     def load(self):
-        if not os.path.exists(self.db_path):
-            print(f"Warning: Vector database {self.db_path} not found. Please run embed_products.py first.")
-            return
-
         print("Loading sentence-transformers model...")
         try:
             from sentence_transformers import SentenceTransformer
@@ -26,15 +20,18 @@ class VectorSearchEngine:
             print("Error: sentence-transformers is not installed. Vector search will be unavailable.")
             return
 
-        print("Loading vector database into memory...")
+        print("Loading vector database from MySQL into memory...")
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT product_id, product_name, vector, image_name FROM products_vectors")
-            rows = cursor.fetchall()
-            conn.close()
+            from models import Product
+            # Load only products that have pre-computed vectors
+            rows = Product.query.with_entities(
+                Product.id, 
+                Product.name, 
+                Product.image_url, 
+                Product.vector
+            ).filter(Product.vector.isnot(None)).all()
         except Exception as e:
-            print(f"Error reading vector database: {e}")
+            print(f"Error reading MySQL vector database: {e}")
             return
 
         if not rows:
@@ -46,11 +43,10 @@ class VectorSearchEngine:
         self.image_names = []
         vectors = []
 
-        for row in rows:
-            pid, name, vec_str, img_name = row
+        for pid, name, img_url, vec_str in rows:
             self.product_ids.append(pid)
             self.product_names.append(name)
-            self.image_names.append(img_name)
+            self.image_names.append(img_url)
             vectors.append(json.loads(vec_str))
 
         self.embeddings = np.array(vectors, dtype=np.float32)
