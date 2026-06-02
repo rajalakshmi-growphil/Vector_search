@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medingen Vector Search</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(17, 24, 39, 0.7);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-primary: #8b5cf6;
+            --accent-secondary: #06b6d4;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --glow-color: rgba(139, 92, 246, 0.15);
+            --font-display: 'Outfit', sans-serif;
+            --font-sans: 'Inter', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.12) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            font-family: var(--font-sans);
+            min-height: 100vh;
+            overflow-x: hidden;
+            padding-bottom: 80px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header Style */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 30px 0 50px 0;
+        }
+
+        .logo {
+            font-family: var(--font-display);
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #a78bfa, #22d3ee);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-dot {
+            width: 10px;
+            height: 10px;
+            background-color: var(--accent-secondary);
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 12px var(--accent-secondary);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 18px var(--accent-secondary); }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        .subtitle {
+            font-family: var(--font-sans);
+            font-size: 14px;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 6px 14px;
+            border-radius: 99px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Search Section */
+        .search-container {
+            max-width: 760px;
+            margin: 0 auto 50px auto;
+            text-align: center;
+            position: relative;
+        }
+
+        .hero-title {
+            font-family: var(--font-display);
+            font-size: 48px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            letter-spacing: -1px;
+            line-height: 1.1;
+        }
+
+        .hero-title span {
+            background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-desc {
+            color: var(--text-muted);
+            font-size: 16px;
+            margin-bottom: 35px;
+            font-weight: 300;
+        }
+
+        .search-box-wrapper {
+            position: relative;
+            border-radius: 20px;
+            padding: 2px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+            transition: all 0.4s ease;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            z-index: 30;
+        }
+
+        .search-box-wrapper:focus-within {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            box-shadow: 0 15px 40px var(--glow-color);
+            transform: translateY(-2px);
+        }
+
+        .search-box {
+            display: flex;
+            align-items: center;
+            background: #111827;
+            border-radius: 18px;
+            padding: 6px 12px;
+        }
+
+        .search-box input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-main);
+            font-size: 18px;
+            padding: 14px 10px;
+            font-family: var(--font-sans);
+        }
+
+        .search-box input::placeholder {
+            color: #4b5563;
+        }
+
+        .search-btn {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border: none;
+            color: white;
+            font-family: var(--font-display);
+            font-weight: 600;
+            padding: 12px 26px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .search-btn:hover {
+            opacity: 0.95;
+            transform: scale(1.02);
+        }
+
+        .search-icon {
+            width: 20px;
+            height: 20px;
+            fill: #4b5563;
+            margin-left: 10px;
+        }
+
+        /* Autocomplete Dropdown */
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #111827;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            z-index: 50;
+            max-height: 350px;
+            overflow-y: auto;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            display: none;
+            text-align: left;
+            margin-top: 10px;
+            backdrop-filter: blur(12px);
+        }
+
+        .suggestion-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            gap: 15px;
+        }
+
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
+
+        .suggestion-item:hover {
+            background: rgba(139, 92, 246, 0.15);
+        }
+
+        .sugg-img-container {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            background: #1f2937;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .sugg-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .sugg-text {
+            flex-grow: 1;
+            min-width: 0;
+        }
+
+        .sugg-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sugg-brand {
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 2px;
+        }
+
+        .sugg-score {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent-secondary);
+            font-family: var(--font-display);
+            background: rgba(6, 182, 212, 0.08);
+            border: 1px solid rgba(6, 182, 212, 0.15);
+            padding: 4px 8px;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+
+        /* Suggestion Chips */
+        .suggestions {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .chip {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 99px;
+            padding: 8px 16px;
+            font-size: 13px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .chip:hover {
+            background: rgba(139, 92, 246, 0.1);
+            border-color: var(--accent-primary);
+            color: var(--text-main);
+            transform: translateY(-1px);
+        }
+
+        /* Results Section */
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding: 0 5px;
+        }
+
+        .results-count {
+            font-size: 15px;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 25px;
+        }
+
+        /* Product Card */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            overflow: hidden;
+            backdrop-filter: blur(12px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+            height: 100%;
+        }
+
+        .card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(139, 92, 246, 0.3);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3), 0 0 15px rgba(139, 92, 246, 0.05);
+        }
+
+        .card-header-img {
+            height: 180px;
+            background: #1f2937;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .card-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+
+        .card:hover .card-img {
+            transform: scale(1.06);
+        }
+
+        .placeholder-icon {
+            width: 50px;
+            height: 50px;
+            opacity: 0.3;
+            color: var(--text-muted);
+        }
+
+        .score-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(17, 24, 39, 0.85);
+            border: 1px solid rgba(6, 182, 212, 0.4);
+            color: var(--accent-secondary);
+            font-family: var(--font-display);
+            font-size: 12px;
+            font-weight: 700;
+            padding: 5px 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        .card-content {
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+
+        .card-brand {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--accent-primary);
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .card-title {
+            font-family: var(--font-display);
+            font-size: 18px;
+            font-weight: 600;
+            line-height: 1.3;
+            margin-bottom: 10px;
+            color: var(--text-main);
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            height: 48px;
+        }
+
+        .card-desc {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 20px;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            flex-grow: 1;
+        }
+
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 16px;
+            margin-top: auto;
+        }
+
+        .card-price {
+            font-family: var(--font-display);
+            font-size: 18px;
+            font-weight: 700;
+            color: #10b981;
+        }
+
+        .card-rating {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #fbbf24;
+        }
+
+        .star-icon {
+            color: #fbbf24;
+            width: 15px;
+            height: 15px;
+            fill: currentColor;
+        }
+
+        /* Loading / Shimmer State */
+        .loader {
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 80px 0;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .spinner {
+            width: 45px;
+            height: 45px;
+            border: 3.5px solid rgba(255,255,255,0.05);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loader-text {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* Modal Overlay */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(3, 7, 18, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background: #111827;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            width: 100%;
+            max-width: 700px;
+            max-height: 85vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes scaleIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: none;
+            color: var(--text-main);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: background 0.2s;
+            z-index: 10;
+        }
+
+        .modal-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-header-img {
+            height: 250px;
+            background: #1f2937;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .modal-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .modal-body {
+            padding: 30px;
+        }
+
+        .modal-brand {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--accent-primary);
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .modal-title {
+            font-family: var(--font-display);
+            font-size: 26px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            line-height: 1.2;
+        }
+
+        .modal-price-rating {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .modal-section-title {
+            font-family: var(--font-display);
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-main);
+        }
+
+        .modal-desc {
+            color: var(--text-muted);
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 25px;
+        }
+
+        /* Detail Tags */
+        .salt-section {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 16px;
+            margin-bottom: 25px;
+        }
+
+        .salt-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .salt-badge {
+            background: rgba(6, 182, 212, 0.08);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            color: var(--accent-secondary);
+            font-size: 13px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 60px 0;
+            color: var(--text-muted);
+        }
+
+        .no-results svg {
+            width: 60px;
+            height: 60px;
+            stroke: currentColor;
+            opacity: 0.3;
+            margin-bottom: 15px;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo">
+                <span class="logo-dot"></span>
+                MEDINGEN
+            </div>
+            <div class="subtitle">Semantic Vector Search Engine</div>
+        </header>
+
+        <!-- Hero / Search Section -->
+        <section class="search-container">
+            <h1 class="hero-title">Discover Medicines <span>Intelligently</span></h1>
+            <p class="hero-desc">Powered by deep learning semantic text search. Search by symptoms, uses, brands, or names.</p>
+            
+            <div class="search-box-wrapper">
+                <div class="search-box">
+                    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                    <input type="text" id="searchInput" placeholder="Search e.g. 'high blood pressure' or 'pain relief'..." autocomplete="off">
+                    <button class="search-btn" id="searchBtn">
+                        Search
+                    </button>
+                </div>
+                <!-- Autocomplete Dropdown -->
+                <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
+            </div>
+
+            <!-- Chips -->
+            <div class="suggestions">
+                <div class="chip" onclick="quickSearch('Type 2 Diabetes')">Type 2 Diabetes</div>
+                <div class="chip" onclick="quickSearch('Heart Care')">Heart Care</div>
+                <div class="chip" onclick="quickSearch('Pain relief')">Pain Relief</div>
+                <div class="chip" onclick="quickSearch('Daparest')">Daparest</div>
+                <div class="chip" onclick="quickSearch('Bisoprolol')">Bisoprolol</div>
+                <div class="chip" onclick="quickSearch('Cholesterol')">Cholesterol</div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <main>
+            <div class="results-header">
+                <h2 class="modal-section-title" id="resultsTitle" style="margin-bottom: 0;">Search Results</h2>
+                <span class="results-count" id="resultsCount"></span>
+            </div>
+
+            <!-- Shimmer / Loader -->
+            <div class="loader" id="loader">
+                <div class="spinner"></div>
+                <div class="loader-text">Analyzing query semantics...</div>
+            </div>
+
+            <!-- Grid -->
+            <div class="grid" id="resultsGrid">
+                <!-- Initial info or products will load here -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Details Modal -->
+    <div class="modal-overlay" id="detailModal">
+        <div class="modal-content">
+            <button class="modal-close" id="modalClose">&times;</button>
+            <div class="modal-header-img" id="modalImgContainer">
+                <!-- Image or placeholder -->
+            </div>
+            <div class="modal-body">
+                <div class="modal-brand" id="modalBrand"></div>
+                <h2 class="modal-title" id="modalTitle"></h2>
+                
+                <div class="modal-price-rating">
+                    <div class="card-price" id="modalPrice"></div>
+                    <div class="card-rating" id="modalRating"></div>
+                </div>
+
+                <div class="modal-section-title">
+                    <svg style="width:18px;height:18px" viewBox="0 0 24 24"><path fill="currentColor" d="M12,2A10,10,0,0,0,2,12a10,10,0,0,0,10,10,10,10,0,0,0,10,-10A10,10,0,0,0,12,2m0,18c-4.41,0,-8,-3.59,-8,-8c0,-4.41,3.59,-8,8,-8c4.41,0,8,3.59,8,8c0,4.41,-3.59,8,-8,8m-1,-13h2v6h-2V7m0,8h2v2h-2v-2"/></svg>
+                    Indications / Medical Uses
+                </div>
+                <div class="modal-desc" id="modalDesc"></div>
+
+
+
+                <!-- Additional Product Details -->
+                <div class="modal-section-title" style="margin-top:20px;">
+                    <svg style="width:18px;height:18px" viewBox="0 0 24 24"><path fill="currentColor" d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3M19 19H5V5H19V19M17 12H7V10H17V12M17 16H7V14H17V16M17 8H7V6H17V8Z"/></svg>
+                    Additional Details
+                </div>
+                <div class="modal-desc" id="modalSpecs"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const loader = document.getElementById('loader');
+        const resultsGrid = document.getElementById('resultsGrid');
+        const resultsCount = document.getElementById('resultsCount');
+        const resultsTitle = document.getElementById('resultsTitle');
+
+        // Modal elements
+        const detailModal = document.getElementById('detailModal');
+        const modalClose = document.getElementById('modalClose');
+        const modalImgContainer = document.getElementById('modalImgContainer');
+        const modalBrand = document.getElementById('modalBrand');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalPrice = document.getElementById('modalPrice');
+        const modalRating = document.getElementById('modalRating');
+        const modalDesc = document.getElementById('modalDesc');
+        const modalSaltSection = document.getElementById('modalSaltSection');
+        const modalSaltList = document.getElementById('modalSaltList');
+        const modalSpecs = document.getElementById('modalSpecs');
+
+        // Helper to format currency
+        function formatPrice(val) {
+            if (!val || val === 0) return 'Price N/A';
+            return `₹${parseFloat(val).toFixed(2)}`;
+        }
+
+        // Trigger search on button click
+        searchBtn.addEventListener('click', performSearch);
+        
+        // Trigger search on Enter key
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') performSearch();
+        });
+
+        // Quick search chip handler
+        function quickSearch(val) {
+            searchInput.value = val;
+            performSearch();
+        }
+
+        // Main search execution
+        async function performSearch() {
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            // Show loader & clear grid
+            loader.style.display = 'flex';
+            resultsGrid.innerHTML = '';
+            resultsCount.textContent = '';
+            resultsTitle.textContent = `Searching for "${query}"`;
+
+            const startTime = performance.now();
+
+            try {
+                // Call search backend endpoint
+                const response = await fetch(`/search?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                
+                const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+                
+                loader.style.display = 'none';
+                
+                if (!data || data.length === 0) {
+                    renderNoResults();
+                    resultsCount.textContent = `0 results found (${duration}s)`;
+                    return;
+                }
+
+                resultsCount.textContent = `${data.length} matches found (${duration}s)`;
+                renderResults(data);
+            } catch (err) {
+                console.error("Search API Error:", err);
+                loader.style.display = 'none';
+                resultsGrid.innerHTML = `<div class="no-results"><p>Error connecting to semantic search engine. Make sure the server is running.</p></div>`;
+            }
+        }
+
+        function renderNoResults() {
+            resultsGrid.innerHTML = `
+                <div class="no-results" style="grid-column: 1 / -1;">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p style="font-size:16px; font-weight:500;">No semantic matches found</p>
+                    <p style="font-size:14px; margin-top:5px;">Try using different keywords or simpler medical terms.</p>
+                </div>
+            `;
+        }
+
+        function renderResults(products) {
+            resultsGrid.innerHTML = '';
+            products.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.onclick = () => showProductDetails(p);
+
+                // Setup image
+                let imgHTML = `<svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 10.5C3.67 10.5 3 11.17 3 12C3 12.83 3.67 13.5 4.5 13.5M19.5 10.5C18.67 10.5 18 11.17 18 12M12 6C8.69 6 6 8.69 6 12M12 15.5C10.07 15.5 8.5 13.93 8.5 12C8.5 10.07 10.07 8.5 12 8.5C13.93 8.5 15.5 10.07 15.5 12C15.5 13.93 13.93 15.5 12 15.5Z" /></svg>`;
+                if (p.image_url) {
+                    imgHTML = `<img src="https://static.growphil.com/medingen/${p.image_url}" class="card-img" onerror="this.outerHTML='<svg class=\\'placeholder-icon\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\\' /></svg>'">`;
+                }
+
+                // Setup score badge if score exists
+                const scoreHTML = p.score ? `<div class="score-badge">${(p.score * 100).toFixed(1)}% match</div>` : '';
+
+                card.innerHTML = `
+                    <div class="card-header-img">
+                        ${imgHTML}
+                        ${scoreHTML}
+                    </div>
+                    <div class="card-content">
+                        <div class="card-brand">${p.brand || 'MEDINGEN'}</div>
+                        <h3 class="card-title">${p.name}</h3>
+                        <p class="card-desc">${p.description || 'No description available for this product.'}</p>
+                        <div class="card-footer">
+                            <span class="card-price">${formatPrice(p.price)}</span>
+                            <span class="card-rating">
+                                <svg class="star-icon" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                                ${parseFloat(p.rating || 4.5).toFixed(1)}
+                            </span>
+                        </div>
+                    </div>
+                `;
+                resultsGrid.appendChild(card);
+            });
+        }
+
+        async function showProductDetails(p) {
+            // Setup Modal Image
+            let imgHTML = `<svg class="placeholder-icon" style="width:80px;height:80px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 10.5C3.67 10.5 3 11.17 3 12C3 12.83 3.67 13.5 4.5 13.5M19.5 10.5C18.67 10.5 18 11.17 18 12M12 6C8.69 6 6 8.69 6 12M12 15.5C10.07 15.5 8.5 13.93 8.5 12C8.5 10.07 10.07 8.5 12 8.5C13.93 8.5 15.5 10.07 15.5 12C15.5 13.93 13.93 15.5 12 15.5Z" /></svg>`;
+            if (p.image_url) {
+                imgHTML = `<img src="https://static.growphil.com/medingen/${p.image_url}" class="modal-img" onerror="this.outerHTML='<svg class=\\'placeholder-icon\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\\' /></svg>'">`;
+            }
+            modalImgContainer.innerHTML = imgHTML;
+
+            // Fill text values
+            modalBrand.textContent = p.brand || 'MEDINGEN';
+            modalTitle.textContent = p.name;
+            modalPrice.textContent = formatPrice(p.price);
+            
+            modalRating.innerHTML = `
+                <svg class="star-icon" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                ${parseFloat(p.rating || 4.5).toFixed(1)}
+            `;
+
+            modalDesc.textContent = p.description || 'No detailed specifications or uses provided.';
+
+            // Populate Specs
+            modalSpecs.textContent = `Product ID: ${p.id} | Brand: ${p.brand || 'N/A'}`;
+
+
+
+            // Open Modal
+            detailModal.style.display = 'flex';
+        }
+
+        // Close Modal Handlers
+        modalClose.onclick = () => detailModal.style.display = 'none';
+        
+        window.onclick = (e) => {
+            if (e.target === detailModal) detailModal.style.display = 'none';
+        }
+
+        // Autocomplete logic
+        const autocompleteDropdown = document.getElementById('autocompleteDropdown');
+        let debounceTimer;
+
+        searchInput.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            const query = searchInput.value.trim();
+            if (!query) {
+                autocompleteDropdown.style.display = 'none';
+                return;
+            }
+            debounceTimer = setTimeout(() => {
+                fetchAutocomplete(query);
+            }, 180); // 180ms debounce
+        });
+
+        // Hide dropdown on click outside
+        document.addEventListener('click', (e) => {
+            const wrapper = document.querySelector('.search-box-wrapper');
+            if (wrapper && !wrapper.contains(e.target)) {
+                autocompleteDropdown.style.display = 'none';
+            }
+        });
+
+        // Fetch suggestions from vector search API
+        async function fetchAutocomplete(query) {
+            try {
+                const response = await fetch(`/search?q=${encodeURIComponent(query)}`);
+                if (!response.ok) return;
+                const data = await response.json();
+                
+                if (!data || data.length === 0) {
+                    autocompleteDropdown.style.display = 'none';
+                    return;
+                }
+                
+                renderAutocompleteDropdown(data.slice(0, 5)); // show top 5 matches
+            } catch (err) {
+                console.error("Autocomplete fetch failed:", err);
+            }
+        }
+
+        // Render dropdown items
+        function renderAutocompleteDropdown(suggestions) {
+            autocompleteDropdown.innerHTML = '';
+            
+            suggestions.forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'suggestion-item';
+                
+                // Clicking an item opens details AND fills/runs background search!
+                item.onclick = (e) => {
+                    e.stopPropagation();
+                    searchInput.value = p.name;
+                    autocompleteDropdown.style.display = 'none';
+                    performSearch(); // update background results
+                    showProductDetails(p); // open modal immediately
+                };
+
+                // Setup small image thumbnail or generic icon
+                let imgHTML = `<svg class="placeholder-icon" style="width:20px;height:20px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 10.5C3.67 10.5 3 11.17 3 12C3 12.83 3.67 13.5 4.5 13.5M19.5 10.5C18.67 10.5 18 11.17 18 12M12 6C8.69 6 6 8.69 6 12M12 15.5C10.07 15.5 8.5 13.93 8.5 12C8.5 10.07 10.07 8.5 12 8.5C13.93 8.5 15.5 10.07 15.5 12C15.5 13.93 13.93 15.5 12 15.5Z" /></svg>`;
+                if (p.image_url) {
+                    imgHTML = `<img src="https://static.growphil.com/medingen/${p.image_url}" class="sugg-img" onerror="this.outerHTML='<svg class=\\'placeholder-icon\\' style=\\'width:20px;height:20px\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\\' /></svg>'">`;
+                }
+
+                item.innerHTML = `
+                    <div class="sugg-img-container">
+                        ${imgHTML}
+                    </div>
+                    <div class="sugg-text">
+                        <div class="sugg-title">${p.name}</div>
+                        <div class="sugg-brand">${p.brand || 'Medingen Product'}</div>
+                    </div>
+                    <div class="sugg-score">${(p.score * 100).toFixed(0)}% match</div>
+                `;
+                
+                autocompleteDropdown.appendChild(item);
+            });
+            
+            autocompleteDropdown.style.display = 'block';
+        }
+
+        // Run default search on load
+        quickSearch('Diabetes');
+    </script>
+</body>
+</html>

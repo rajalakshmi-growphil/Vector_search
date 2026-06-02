@@ -1,0 +1,12 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local environment variables
+.env
+Backend/.env
+
+# Databases and large binary files
+Backend/vector_search.db

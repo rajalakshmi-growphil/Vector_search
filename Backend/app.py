@@ -1,307 +1,279 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from datetime import datetime, timedelta
-from functools import wraps
-import jwt
+import os
+import json
+import re
 
-from models import db, Product, SaltContent, Review, ProductDescription
+from models import db, Product
 from config import Config
+from vector_engine import VectorSearchEngine
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_url_path='/')
 app.config.from_object(Config)
 CORS(app)
 db.init_app(app)
 
-# JWT AUTHENTICATION
+vector_engine = VectorSearchEngine()
 
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            auth_header = request.headers['Authorization']
-            parts = auth_header.split()
-            if len(parts) == 2 and parts[0] == 'Bearer':
-                token = parts[1]
+# PRODUCT ENDPOINTS
 
-        if not token:
-            return jsonify({'error': 'Authorization header missing'}), 401
-
-        try:
-            data = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-        except jwt.ExpiredSignatureError:
-            return jsonify({'error': 'Token expired'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'error': 'Invalid token'}), 401
-
-        return f(*args, **kwargs)
-    return decorated
+@app.route('/')
+def home():
+    return app.send_static_file('index.html')
 
 
-# LOGIN ENDPOINT
+@app.route('/search', methods=['GET'])
+def search_products():
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify([])
 
-@app.route('/login', methods=['POST'])
-def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
+    # Perform vector search
+    try:
+        vector_results = vector_engine.search(query, top_k=12)
+    except Exception as e:
+        print(f"Vector search failed: {e}")
+        vector_results = []
 
-    if not username or not password:
-        return jsonify({'error': 'Username and password required'}), 400
+    if not vector_results:
+        # Fallback to plain SQL search if vector search is unavailable/empty
+        db_products = Product.query.filter(Product.name.like(f"%{query}%")).limit(12).all()
+        return jsonify([
+            {
+                "id": p.id,
+                "name": p.name,
+                "brand": p.brand,
+                "price": p.price,
+                "rating": p.rating,
+                "image_url": p.image_url,
+                "description": p.description,
+                "score": 1.0  # mock score for keyword match
+            } for p in db_products
+        ])
 
-    token = jwt.encode(
-        {'user': username, 'exp': datetime.utcnow() + timedelta(hours=1)},
-        Config.SECRET_KEY,
-        algorithm='HS256'
-    )
+    # Fetch full product details from the main database
+    product_ids = [r['product_id'] for r in vector_results]
+    products = Product.query.filter(Product.id.in_(product_ids)).all()
+    product_map = {p.id: p for p in products}
 
-    return jsonify({'token': token})
-
-
-# PRODUCT CRUD
-
-@app.route('/products', methods=['GET'])
-@token_required
-def get_products():
-    products = Product.query.all()
-    result = [
-        {
-            "id": p.id,
-            "name": p.name,
-            "brand": p.brand,
-            "price": p.price,
-            "rating": p.rating,
-            "image_url": p.image_url,
-            "description": p.description
-        }
-        for p in products
-    ]
-    return jsonify(result)
-
-
-@app.route('/products/<int:product_id>', methods=['GET'])
-@token_required
-def get_product(product_id):
-    product = Product.query.get_or_404(product_id)
-    result = {
-        "id": product.id,
-        "name": product.name,
-        "brand": product.brand,
-        "price": product.price,
-        "rating": product.rating,
-        "image_url": product.image_url,
-        "description": product.description
-    }
-    return jsonify(result)
-
-
-@app.route('/products', methods=['POST'])
-@token_required
-def add_product():
-    data = request.get_json()
-    new_product = Product(
-        name=data.get('name'),
-        brand=data.get('brand'),
-        price=data.get('price'),
-        rating=data.get('rating'),
-        image_url=data.get('image_url'),
-        description=data.get('description')
-    )
-    db.session.add(new_product)
-    db.session.commit()
-    return jsonify({'message': 'Product added successfully', 'id': new_product.id}), 201
+    results = []
+    for r in vector_results:
+        p_id = r['product_id']
+        p = product_map.get(p_id)
+        if p:
+            results.append({
+                "id": p.id,
+                "name": p.name,
+                "brand": p.brand,
+                "price": p.price,
+                "rating": p.rating,
+                "image_url": p.image_url,
+                "description": p.description,
+                "score": r['score']
+            })
+        else:
+            # Fallback to vector data if not found in Product table
+            results.append({
+                "id": p_id,
+                "name": r['product_name'],
+                "brand": "Medingen",
+                "price": 0.0,
+                "rating": 4.5,
+                "image_url": r['image_name'],
+                "description": "",
+                "score": r['score']
+            })
+    return jsonify(results)
 
 
-@app.route('/products/<int:product_id>', methods=['PUT'])
-@token_required
-def update_product(product_id):
-    product = Product.query.get_or_404(product_id)
-    data = request.get_json()
+def seed_database_from_sql():
+    # Check if we already have products
+    if Product.query.first() is not None:
+        print("Database already seeded with products.")
+        return
 
-    product.name = data.get('name', product.name)
-    product.brand = data.get('brand', product.brand)
-    product.price = data.get('price', product.price)
-    product.rating = data.get('rating', product.rating)
-    product.image_url = data.get('image_url', product.image_url)
-    product.description = data.get('description', product.description)
+    sql_file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'Products.sql'))
+    if not os.path.exists(sql_file_path):
+        print(f"Warning: {sql_file_path} not found. Cannot seed database.")
+        return
 
-    db.session.commit()
-    return jsonify({'message': 'Product updated successfully'})
+    print("Seeding database from Products.sql... (this might take a few moments)")
+    with open(sql_file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
 
+    # Use the robust parser
+    def parse_sql_insert_values(values_block):
+        rows = []
+        current_row = []
+        in_string = False
+        string_char = None
+        escaped = False
+        in_paren = False
+        current_val = []
 
-@app.route('/products/<int:product_id>', methods=['DELETE'])
-@token_required
-def delete_product(product_id):
-    product = Product.query.get_or_404(product_id)
-    db.session.delete(product)
-    db.session.commit()
-    return jsonify({'message': 'Product deleted successfully'})
+        i = 0
+        n = len(values_block)
+        while i < n:
+            char = values_block[i]
 
+            if escaped:
+                current_val.append(char)
+                escaped = False
+                i += 1
+                continue
 
-# SALT CONTENT CRUD
+            if char == '\\':
+                current_val.append(char)
+                escaped = True
+                i += 1
+                continue
 
-@app.route('/products/<int:product_id>/salts', methods=['GET'])
-@token_required
-def get_salts(product_id):
-    salts = SaltContent.query.filter_by(product_id=product_id).all()
-    result = [
-        {"id": s.id, "salt_name": s.salt_name, "amount_mg": s.amount_mg, "notes": s.notes}
-        for s in salts
-    ]
-    return jsonify(result)
+            if in_string:
+                if char == string_char:
+                    # Check for doubled single quotes (SQL escape style: '')
+                    if i + 1 < n and values_block[i + 1] == string_char:
+                        current_val.append(string_char)
+                        i += 2
+                        continue
+                    else:
+                        in_string = False
+                        string_char = None
+                else:
+                    current_val.append(char)
+                i += 1
+                continue
 
+            if char in ("'", '"'):
+                in_string = True
+                string_char = char
+                i += 1
+                continue
 
-@app.route('/products/<int:product_id>/salts/<int:salt_id>', methods=['GET'])
-@token_required
-def get_salt(product_id, salt_id):
-    salt = SaltContent.query.filter_by(product_id=product_id, id=salt_id).first_or_404()
-    result = {"id": salt.id, "salt_name": salt.salt_name, "amount_mg": salt.amount_mg, "notes": salt.notes}
-    return jsonify(result)
+            if char == '(':
+                if not in_paren:
+                    in_paren = True
+                    current_row = []
+                    current_val = []
+                else:
+                    current_val.append(char)
+                i += 1
+                continue
 
+            if char == ')':
+                if in_paren:
+                    val_str = "".join(current_val).strip()
+                    current_row.append(val_str)
+                    rows.append(current_row)
+                    in_paren = False
+                    current_val = []
+                i += 1
+                continue
 
-@app.route('/products/<int:product_id>/salts', methods=['POST'])
-@token_required
-def add_salt(product_id):
-    data = request.get_json()
-    new_salt = SaltContent(
-        product_id=product_id,
-        salt_name=data.get('salt_name'),
-        amount_mg=data.get('amount_mg'),
-        notes=data.get('notes')
-    )
-    db.session.add(new_salt)
-    db.session.commit()
-    return jsonify({'message': 'Salt added successfully', 'id': new_salt.id}), 201
+            if char == ',':
+                if in_paren:
+                    val_str = "".join(current_val).strip()
+                    current_row.append(val_str)
+                    current_val = []
+                i += 1
+                continue
 
+            if in_paren:
+                current_val.append(char)
+            
+            i += 1
 
-@app.route('/products/<int:product_id>/salts/<int:salt_id>', methods=['PUT'])
-@token_required
-def update_salt(product_id, salt_id):
-    salt = SaltContent.query.filter_by(product_id=product_id, id=salt_id).first_or_404()
-    data = request.get_json()
+        final_rows = []
+        for r in rows:
+            cleaned_row = []
+            for val in r:
+                val_upper = val.upper()
+                if val_upper == 'NULL' or val == '':
+                    cleaned_row.append(None)
+                else:
+                    try:
+                        if '.' in val:
+                            cleaned_row.append(float(val))
+                        else:
+                            cleaned_row.append(int(val))
+                    except ValueError:
+                        cleaned_row.append(val)
+            final_rows.append(cleaned_row)
+        
+        return final_rows
 
-    salt.salt_name = data.get('salt_name', salt.salt_name)
-    salt.amount_mg = data.get('amount_mg', salt.amount_mg)
-    salt.notes = data.get('notes', salt.notes)
+    insert_pattern = re.compile(r"INSERT INTO `Products`.*?VALUES\s*(.*?);", re.DOTALL | re.IGNORECASE)
+    products_to_insert = []
+    seen_ids = set()
 
-    db.session.commit()
-    return jsonify({'message': 'Salt updated successfully'})
+    for match in insert_pattern.finditer(content):
+        values_block = match.group(1).strip()
+        rows = parse_sql_insert_values(values_block)
+        for vals in rows:
+            if len(vals) >= 24:
+                product_id = vals[0]
+                if not product_id or product_id in seen_ids:
+                    continue
+                seen_ids.add(product_id)
 
+                name = vals[2]
+                if not name:
+                    continue
+                brand = vals[5]
+                photo_json = vals[13]
+                price = vals[23] if len(vals) > 23 else 0.0
+                description = vals[21] if len(vals) > 21 else (vals[10] if len(vals) > 10 else "")
 
-@app.route('/products/<int:product_id>/salts/<int:salt_id>', methods=['DELETE'])
-@token_required
-def delete_salt(product_id, salt_id):
-    salt = SaltContent.query.filter_by(product_id=product_id, id=salt_id).first_or_404()
-    db.session.delete(salt)
-    db.session.commit()
-    return jsonify({'message': 'Salt deleted successfully'})
+                # Extract first image from photo JSON
+                image_url = None
+                if photo_json:
+                    try:
+                        photo_list = json.loads(photo_json)
+                        if isinstance(photo_list, list) and len(photo_list) > 0:
+                            image_url = photo_list[0].get('img')
+                    except:
+                        pass
 
+                products_to_insert.append({
+                    "id": product_id,
+                    "name": name,
+                    "brand": brand,
+                    "image_url": image_url,
+                    "price": price,
+                    "rating": 4.5,
+                    "description": description
+                })
 
-# REVIEW CRUD
+    if products_to_insert:
+        print(f"Inserting {len(products_to_insert)} products into database...")
+        db.session.bulk_insert_mappings(Product, products_to_insert)
+        db.session.commit()
+        print("Database seeding completed successfully.")
+    else:
+        print("No products parsed from SQL file.")
 
-@app.route('/products/<int:product_id>/reviews', methods=['GET'])
-@token_required
-def get_reviews(product_id):
-    reviews = Review.query.filter_by(product_id=product_id).all()
-    result = [{"id": r.id, "rating": r.rating, "content": r.content} for r in reviews]
-    return jsonify(result)
-
-
-@app.route('/products/<int:product_id>/reviews/<int:review_id>', methods=['GET'])
-@token_required
-def get_review(product_id, review_id):
-    review = Review.query.filter_by(product_id=product_id, id=review_id).first_or_404()
-    result = {"id": review.id, "rating": review.rating, "content": review.content}
-    return jsonify(result)
-
-
-@app.route('/products/<int:product_id>/reviews', methods=['POST'])
-@token_required
-def add_review(product_id):
-    data = request.get_json()
-    new_review = Review(
-        product_id=product_id,
-        rating=data.get('rating'),
-        content=data.get('content')
-    )
-    db.session.add(new_review)
-    db.session.commit()
-    return jsonify({'message': 'Review added successfully', 'id': new_review.id}), 201
-
-
-@app.route('/products/<int:product_id>/reviews/<int:review_id>', methods=['PUT'])
-@token_required
-def update_review(product_id, review_id):
-    review = Review.query.filter_by(product_id=product_id, id=review_id).first_or_404()
-    data = request.get_json()
-
-    review.rating = data.get('rating', review.rating)
-    review.content = data.get('content', review.content)
-
-    db.session.commit()
-    return jsonify({'message': 'Review updated successfully'})
-
-
-@app.route('/products/<int:product_id>/reviews/<int:review_id>', methods=['DELETE'])
-@token_required
-def delete_review(product_id, review_id):
-    review = Review.query.filter_by(product_id=product_id, id=review_id).first_or_404()
-    db.session.delete(review)
-    db.session.commit()
-    return jsonify({'message': 'Review deleted successfully'})
-
-
-# DESCRIPTION CRUD
-
-@app.route('/products/<int:product_id>/descriptions', methods=['GET'])
-@token_required
-def get_descriptions(product_id):
-    descriptions = ProductDescription.query.filter_by(product_id=product_id).all()
-    result = [{"id": d.id, "details": d.details} for d in descriptions]
-    return jsonify(result)
-
-
-@app.route('/products/<int:product_id>/descriptions/<int:desc_id>', methods=['GET'])
-@token_required
-def get_description(product_id, desc_id):
-    description = ProductDescription.query.filter_by(product_id=product_id, id=desc_id).first_or_404()
-    result = {"id": description.id, "details": description.details}
-    return jsonify(result)
-
-
-@app.route('/products/<int:product_id>/descriptions', methods=['POST'])
-@token_required
-def add_description(product_id):
-    data = request.get_json()
-    new_description = ProductDescription(
-        product_id=product_id,
-        details=data.get('details')
-    )
-    db.session.add(new_description)
-    db.session.commit()
-    return jsonify({'message': 'Description added successfully', 'id': new_description.id}), 201
-
-
-@app.route('/products/<int:product_id>/descriptions/<int:desc_id>', methods=['PUT'])
-@token_required
-def update_description(product_id, desc_id):
-    description = ProductDescription.query.filter_by(product_id=product_id, id=desc_id).first_or_404()
-    data = request.get_json()
-
-    description.details = data.get('details', description.details)
-    db.session.commit()
-    return jsonify({'message': 'Description updated successfully'})
-
-
-@app.route('/products/<int:product_id>/descriptions/<int:desc_id>', methods=['DELETE'])
-@token_required
-def delete_description(product_id, desc_id):
-    description = ProductDescription.query.filter_by(product_id=product_id, id=desc_id).first_or_404()
-    db.session.delete(description)
-    db.session.commit()
-    return jsonify({'message': 'Description deleted successfully'})
 
 if __name__ == '__main__':
     with app.app_context():
+        # Drop unwanted tables if they exist
+        try:
+            db.session.execute(db.text("DROP TABLE IF EXISTS product_descriptions;"))
+            db.session.execute(db.text("DROP TABLE IF EXISTS reviews;"))
+            db.session.execute(db.text("DROP TABLE IF EXISTS salt_contents;"))
+            db.session.commit()
+            print("Successfully cleaned up unused tables (product_descriptions, reviews, salt_contents) from database.")
+        except Exception as e:
+            print(f"Error dropping unused tables: {e}")
+
         db.create_all()
+        try:
+            seed_database_from_sql()
+        except Exception as e:
+            print(f"Error seeding database: {e}")
+    
+    # Load the vector search engine
+    try:
+        vector_engine.load()
+    except Exception as e:
+        print(f"Error loading vector search engine: {e}")
+        
     app.run(debug=True)

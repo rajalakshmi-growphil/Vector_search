@@ -12,31 +12,104 @@ print("Model library loaded.")
 DB_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), 'vector_search.db'))
 SQL_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), 'Products.sql'))
 
-def parse_sql_values(row_str):
-    # Standard splitting by comma is risky, let's use a regex-based parser
-    # Match strings: '...' or numbers or NULL
-    # This pattern matches balanced parentheses for rows better
-    # But for values inside a row, we can use:
-    pattern = re.compile(r"('(?:''|[^'])*'|NULL|[^,]+)")
-    matches = pattern.findall(row_str)
-    
-    final_values = []
-    for m in matches:
-        m = m.strip()
-        if m.upper() == 'NULL':
-            final_values.append(None)
-        elif m.startswith("'") and m.endswith("'"):
-            val = m[1:-1].replace("''", "'").replace("\\'", "'")
-            final_values.append(val)
-        else:
-            try:
-                if '.' in m:
-                    final_values.append(float(m))
+def parse_sql_insert_values(values_block):
+    rows = []
+    current_row = []
+    in_string = False
+    string_char = None
+    escaped = False
+    in_paren = False
+    current_val = []
+
+    i = 0
+    n = len(values_block)
+    while i < n:
+        char = values_block[i]
+
+        if escaped:
+            current_val.append(char)
+            escaped = False
+            i += 1
+            continue
+
+        if char == '\\':
+            current_val.append(char)
+            escaped = True
+            i += 1
+            continue
+
+        if in_string:
+            if char == string_char:
+                # Check for doubled single quotes (SQL escape style: '')
+                if i + 1 < n and values_block[i + 1] == string_char:
+                    current_val.append(string_char)
+                    i += 2
+                    continue
                 else:
-                    final_values.append(int(m))
-            except ValueError:
-                final_values.append(m)
-    return final_values
+                    in_string = False
+                    string_char = None
+            else:
+                current_val.append(char)
+            i += 1
+            continue
+
+        if char in ("'", '"'):
+            in_string = True
+            string_char = char
+            i += 1
+            continue
+
+        if char == '(':
+            if not in_paren:
+                in_paren = True
+                current_row = []
+                current_val = []
+            else:
+                current_val.append(char)
+            i += 1
+            continue
+
+        if char == ')':
+            if in_paren:
+                val_str = "".join(current_val).strip()
+                current_row.append(val_str)
+                rows.append(current_row)
+                in_paren = False
+                current_val = []
+            i += 1
+            continue
+
+        if char == ',':
+            if in_paren:
+                val_str = "".join(current_val).strip()
+                current_row.append(val_str)
+                current_val = []
+            i += 1
+            continue
+
+        if in_paren:
+            current_val.append(char)
+        
+        i += 1
+
+    final_rows = []
+    for r in rows:
+        cleaned_row = []
+        for val in r:
+            val_upper = val.upper()
+            if val_upper == 'NULL' or val == '':
+                cleaned_row.append(None)
+            else:
+                try:
+                    if '.' in val:
+                        cleaned_row.append(float(val))
+                    else:
+                        cleaned_row.append(int(val))
+                except ValueError:
+                    cleaned_row.append(val)
+        final_rows.append(cleaned_row)
+    
+    return final_rows
 
 def main():
     print(f"Reading {SQL_FILE}...")
@@ -44,29 +117,15 @@ def main():
         content = f.read()
     
     print("Finding data blocks...")
-    # Find all INSERT INTO `Products` ... VALUES ( ... );
-    # Note: dumps can have multiple INSERT statements
     insert_pattern = re.compile(r"INSERT INTO `Products`.*?VALUES\s*(.*?);", re.DOTALL | re.IGNORECASE)
     
     parsed_data = []
     for match in insert_pattern.finditer(content):
         values_block = match.group(1).strip()
-        # values_block is (val1, val2, ...), (val1, val2, ...)
         
-        # Split by "), ("
-        # To avoid splitting on "), (" inside strings, we use a more careful approach
-        # But for now, let's try a simple regex split for speed if the data is clean
-        rows = re.split(r"\s*,\s*\n\s*\(", "(" + values_block) # Add leading ( for consistency
-        # Wait, the split is tricky.
-        
-        # Let's find every ( ... ) that is NOT followed by a word (to avoid matching something else)
-        # Actually, standard dumps have one row per line usually.
-        
-        row_pattern = re.compile(r"\((.*?)\)(?:,|\s*;)", re.DOTALL)
-        for row_match in row_pattern.finditer(values_block):
-            row_str = row_match.group(1)
-            vals = parse_sql_values(row_str)
-            
+        # Use robust parser
+        rows = parse_sql_insert_values(values_block)
+        for vals in rows:
             if len(vals) >= 14:
                 product_id = vals[0]
                 name = vals[2]
@@ -95,6 +154,8 @@ def main():
 
     print(f"Generating embeddings for {len(parsed_data)} products...")
     df = pd.DataFrame(parsed_data)
+    # Ensure all names are strings and handle empty/NaN names
+    df['product_name'] = df['product_name'].fillna('').astype(str)
     names = df['product_name'].tolist()
     embeddings = model.encode(names, show_progress_bar=True).tolist()
     
