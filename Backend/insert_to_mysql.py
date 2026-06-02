@@ -32,7 +32,7 @@ def main():
         port = parsed.port or 3306
 
         print(f"Connecting to MySQL server at {host}:{port}...")
-        # Ensure database exists
+        
         temp_conn = mysql.connector.connect(
             host=host,
             user=username,
@@ -44,7 +44,6 @@ def main():
         temp_cursor.close()
         temp_conn.close()
 
-        # Connect to actual database
         conn = mysql.connector.connect(
             host=host,
             user=username,
@@ -54,11 +53,9 @@ def main():
         )
         cursor = conn.cursor()
 
-        # Clean up old separate table if it exists
         cursor.execute("DROP TABLE IF EXISTS products_vectors")
         conn.commit()
 
-        # Prepare records for UPDATE query
         records = []
         for item in data_to_insert:
             records.append((
@@ -66,7 +63,6 @@ def main():
                 int(item['product_id'])
             ))
 
-        # Batch update
         batch_size = 100
         print("Updating vector column in 'products' table...")
         for i in range(0, len(records), batch_size):

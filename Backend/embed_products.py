@@ -43,7 +43,6 @@ def parse_sql_insert_values(values_block):
 
         if in_string:
             if char == string_char:
-                # Check for doubled single quotes (SQL escape style: '')
                 if i + 1 < n and values_block[i + 1] == string_char:
                     current_val.append(string_char)
                     i += 2
@@ -158,7 +157,6 @@ def main():
     for match in insert_pattern.finditer(content):
         values_block = match.group(1).strip()
         
-        # Use robust parser
         rows = parse_sql_insert_values(values_block)
         for vals in rows:
             if len(vals) >= 14:
@@ -189,7 +187,6 @@ def main():
 
     print(f"Generating embeddings for {len(parsed_data)} products...")
     df = pd.DataFrame(parsed_data)
-    # Ensure all names are strings and handle empty/NaN names
     df['product_name'] = df['product_name'].fillna('').astype(str)
     names = df['product_name'].tolist()
     embeddings = model.encode(names, show_progress_bar=True).tolist()
@@ -214,7 +211,6 @@ def main():
         import subprocess
         result = subprocess.run(['python', 'insert_to_mysql.py'], capture_output=False)
         
-        # Clean up
         if os.path.exists(json_path):
             os.remove(json_path)
             

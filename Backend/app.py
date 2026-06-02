@@ -15,8 +15,6 @@ db.init_app(app)
 
 vector_engine = VectorSearchEngine()
 
-# PRODUCT ENDPOINTS
-
 @app.route('/')
 def home():
     return app.send_static_file('index.html')
@@ -28,15 +26,12 @@ def search_products():
     if not query:
         return jsonify([])
 
-    # Perform vector search
     try:
         vector_results = vector_engine.search(query, top_k=12)
     except Exception as e:
-        print(f"Vector search failed: {e}")
         vector_results = []
 
     if not vector_results:
-        # Fallback to plain SQL search if vector search is unavailable/empty
         db_products = Product.query.filter(Product.name.like(f"%{query}%")).limit(12).all()
         return jsonify([
             {
@@ -47,11 +42,10 @@ def search_products():
                 "rating": p.rating,
                 "image_url": p.image_url,
                 "description": p.description,
-                "score": 1.0  # mock score for keyword match
+                "score": 1.0  
             } for p in db_products
         ])
 
-    # Fetch full product details from the main database
     product_ids = [r['product_id'] for r in vector_results]
     products = Product.query.filter(Product.id.in_(product_ids)).all()
     product_map = {p.id: p for p in products}
@@ -72,7 +66,6 @@ def search_products():
                 "score": r['score']
             })
         else:
-            # Fallback to vector data if not found in Product table
             results.append({
                 "id": p_id,
                 "name": r['product_name'],
@@ -87,7 +80,6 @@ def search_products():
 
 
 def seed_database_from_sql():
-    # Check if we already have products
     if Product.query.first() is not None:
         print("Database already seeded with products.")
         return
@@ -101,7 +93,6 @@ def seed_database_from_sql():
     with open(sql_file_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # Use the robust parser
     def parse_sql_insert_values(values_block):
         rows = []
         current_row = []
@@ -130,7 +121,6 @@ def seed_database_from_sql():
 
             if in_string:
                 if char == string_char:
-                    # Check for doubled single quotes (SQL escape style: '')
                     if i + 1 < n and values_block[i + 1] == string_char:
                         current_val.append(string_char)
                         i += 2
@@ -223,7 +213,6 @@ def seed_database_from_sql():
                 price = vals[23] if len(vals) > 23 else 0.0
                 description = vals[21] if len(vals) > 21 else (vals[10] if len(vals) > 10 else "")
 
-                # Extract first image from photo JSON
                 image_url = None
                 if photo_json:
                     try:
@@ -254,7 +243,6 @@ def seed_database_from_sql():
 
 if __name__ == '__main__':
     with app.app_context():
-        # Drop old tables to migrate to single table if needed
         try:
             inspector = db.inspect(db.engine)
             tables = inspector.get_table_names()
@@ -269,7 +257,6 @@ if __name__ == '__main__':
                     needs_drop = True
             
             if needs_drop:
-                # Explicitly drop both to avoid foreign key issues or clean up properly
                 db.session.execute(db.text("DROP TABLE IF EXISTS products_vectors;"))
                 db.session.execute(db.text("DROP TABLE IF EXISTS products;"))
                 db.session.commit()
@@ -284,7 +271,6 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"Error seeding database: {e}")
     
-    # Load the vector search engine
     try:
         with app.app_context():
             vector_engine.load()

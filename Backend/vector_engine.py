@@ -23,7 +23,6 @@ class VectorSearchEngine:
         print("Loading vector database from MySQL into memory...")
         try:
             from models import Product
-            # Load only products that have pre-computed vectors
             rows = Product.query.with_entities(
                 Product.id, 
                 Product.name, 
@@ -50,7 +49,6 @@ class VectorSearchEngine:
             vectors.append(json.loads(vec_str))
 
         self.embeddings = np.array(vectors, dtype=np.float32)
-        # Normalize embeddings for cosine similarity via dot product
         norms = np.linalg.norm(self.embeddings, axis=1, keepdims=True)
         norms[norms == 0] = 1.0
         self.embeddings = self.embeddings / norms
@@ -66,7 +64,6 @@ class VectorSearchEngine:
         if norm > 0:
             query_vector = query_vector / norm
 
-        # Compute cosine similarity (dot product of normalized vectors)
         similarities = np.dot(self.embeddings, query_vector)
         top_indices = np.argsort(similarities)[::-1][:top_k]
 
