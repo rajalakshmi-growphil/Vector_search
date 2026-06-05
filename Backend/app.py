@@ -2,15 +2,22 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
 import json
-import re
 
 from models import db, Product
-from config import Config
 from vector_engine import VectorSearchEngine
 
 app = Flask(__name__, static_folder='static', static_url_path='/')
-app.config.from_object(Config)
 CORS(app)
+
+app.config['MYSQL_HOST'] = 'localhost'
+app.config['MYSQL_USER'] = 'root'
+app.config['MYSQL_PASSWORD'] = ''
+app.config['MYSQL_DB'] = 'medingen'
+
+# app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+mysqlconnector://{app.config['MYSQL_USER']}:{app.config['MYSQL_PASSWORD']}@{app.config['MYSQL_HOST']}/{app.config['MYSQL_DB']}"
+# app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+
 db.init_app(app)
 
 vector_engine = VectorSearchEngine()
@@ -19,262 +26,168 @@ vector_engine = VectorSearchEngine()
 def home():
     return app.send_static_file('index.html')
 
-
 @app.route('/search', methods=['GET'])
 def search_products():
     query = request.args.get('q', '').strip()
     if not query:
         return jsonify([])
 
+    # Typo correction: Map spelling variations of paracetamol to the correct term
+    q_lower = query.lower()
+    search_query = query
+    
+    # Matches "parac", "paracit", "paracitamol", "paracitmol", "paracet", "paraceta", etc.
+    if "parac" in q_lower or "paracet" in q_lower or "paracit" in q_lower:
+        search_query = "PARACETAMOL"
+
     try:
-        vector_results = vector_engine.search(query, top_k=12)
+        # Increase top_k to 150 to get a wide enough candidate pool for hybrid ranking
+        vector_results = vector_engine.search(search_query, top_k=150)
     except Exception as e:
+        print(f"Error during search: {e}")
         vector_results = []
 
+    # If vector search has no results, fall back to SQL LIKE query
     if not vector_results:
-        db_products = Product.query.filter(Product.name.like(f"%{query}%")).limit(12).all()
-        return jsonify([
-            {
-                "id": p.id,
-                "name": p.name,
-                "brand": p.brand,
-                "price": p.price,
-                "rating": p.rating,
-                "image_url": p.image_url,
-                "description": p.description,
-                "score": 1.0  
-            } for p in db_products
-        ])
+        db_products = Product.query.filter(
+            (Product.name.like(f"%{search_query}%")) |
+            (Product.salt_name.like(f"%{search_query}%")) |
+            (Product.composition.like(f"%{search_query}%"))
+        ).limit(50).all()
+        
+        results = []
+        for idx, p in enumerate(db_products):
+            name_lower = p.name.lower() if p.name else ""
+            salt_lower = p.salt_name.lower() if p.salt_name else ""
+            comp_lower = p.composition.lower() if p.composition else ""
+            sq_lower = search_query.lower()
+            oq_lower = query.lower()
+            
+            # Determine display score for LIKE fallback
+            if name_lower.startswith(sq_lower) or name_lower.startswith(oq_lower):
+                display_score = 1.0
+            elif sq_lower in name_lower or oq_lower in name_lower:
+                display_score = 0.99
+            elif sq_lower in salt_lower or oq_lower in salt_lower:
+                display_score = 0.99
+            elif sq_lower in comp_lower or oq_lower in comp_lower:
+                display_score = 0.88
+            else:
+                display_score = 0.50
+                
+            results.append({
+                "product_id": p.id,
+                "product_name": p.name,
+                "salt_name": p.salt_name,
+                "composition": p.composition,
+                "image": p.image,
+                "product_url": p.product_url,
+                "product_pricing_new": float(p.product_pricing_new) if p.product_pricing_new is not None else None,
+                "score": display_score
+            })
+        return jsonify(results)
 
     product_ids = [r['product_id'] for r in vector_results]
     products = Product.query.filter(Product.id.in_(product_ids)).all()
     product_map = {p.id: p for p in products}
 
-    results = []
+    ranked_candidates = []
     for r in vector_results:
         p_id = r['product_id']
         p = product_map.get(p_id)
         if p:
-            results.append({
-                "id": p.id,
-                "name": p.name,
-                "brand": p.brand,
-                "price": p.price,
-                "rating": p.rating,
-                "image_url": p.image_url,
-                "description": p.description,
-                "score": r['score']
-            })
-        else:
-            results.append({
-                "id": p_id,
-                "name": r['product_name'],
-                "brand": "Medingen",
-                "price": 0.0,
-                "rating": 4.5,
-                "image_url": r['image_name'],
-                "description": "",
-                "score": r['score']
-            })
-    return jsonify(results)
-
-
-def seed_database_from_sql():
-    if Product.query.first() is not None:
-        print("Database already seeded with products.")
-        return
-
-    sql_file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'Products.sql'))
-    if not os.path.exists(sql_file_path):
-        print(f"Warning: {sql_file_path} not found. Cannot seed database.")
-        return
-
-    print("Seeding database from Products.sql... (this might take a few moments)")
-    with open(sql_file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    def parse_sql_insert_values(values_block):
-        rows = []
-        current_row = []
-        in_string = False
-        string_char = None
-        escaped = False
-        in_paren = False
-        current_val = []
-
-        i = 0
-        n = len(values_block)
-        while i < n:
-            char = values_block[i]
-
-            if escaped:
-                current_val.append(char)
-                escaped = False
-                i += 1
-                continue
-
-            if char == '\\':
-                current_val.append(char)
-                escaped = True
-                i += 1
-                continue
-
-            if in_string:
-                if char == string_char:
-                    if i + 1 < n and values_block[i + 1] == string_char:
-                        current_val.append(string_char)
-                        i += 2
-                        continue
-                    else:
-                        in_string = False
-                        string_char = None
-                else:
-                    current_val.append(char)
-                i += 1
-                continue
-
-            if char in ("'", '"'):
-                in_string = True
-                string_char = char
-                i += 1
-                continue
-
-            if char == '(':
-                if not in_paren:
-                    in_paren = True
-                    current_row = []
-                    current_val = []
-                else:
-                    current_val.append(char)
-                i += 1
-                continue
-
-            if char == ')':
-                if in_paren:
-                    val_str = "".join(current_val).strip()
-                    current_row.append(val_str)
-                    rows.append(current_row)
-                    in_paren = False
-                    current_val = []
-                i += 1
-                continue
-
-            if char == ',':
-                if in_paren:
-                    val_str = "".join(current_val).strip()
-                    current_row.append(val_str)
-                    current_val = []
-                i += 1
-                continue
-
-            if in_paren:
-                current_val.append(char)
+            name_lower = p.name.lower() if p.name else ""
+            salt_lower = p.salt_name.lower() if p.salt_name else ""
+            comp_lower = p.composition.lower() if p.composition else ""
+            sq_lower = search_query.lower()
+            oq_lower = query.lower()
             
-            i += 1
-
-        final_rows = []
-        for r in rows:
-            cleaned_row = []
-            for val in r:
-                val_upper = val.upper()
-                if val_upper == 'NULL' or val == '':
-                    cleaned_row.append(None)
+            boost = 0
+            display_score = 0.20
+            
+            # 1. Product name starts with fully corrected search term (highest priority)
+            if name_lower.startswith(sq_lower):
+                boost = 110
+                display_score = 1.0
+            # 2. Product name starts with original query
+            elif name_lower.startswith(oq_lower):
+                boost = 100
+                display_score = 1.0
+            # 3. Product name contains fully corrected search term
+            elif sq_lower in name_lower:
+                boost = 90
+                display_score = 0.99
+            # 4. Product name contains original query
+            elif oq_lower in name_lower:
+                boost = 80
+                display_score = 0.99
+            # 5. Salt name contains corrected search term or original query
+            elif sq_lower in salt_lower or oq_lower in salt_lower:
+                boost = 60
+                display_score = 0.99
+            # 6. Composition contains corrected search term or original query
+            elif sq_lower in comp_lower or oq_lower in comp_lower:
+                boost = 40
+                display_score = 0.88
+            # 7. Pure semantic match
+            else:
+                v_score = r['score']
+                if v_score >= 0.45:
+                    boost = 20
+                    display_score = 0.88
+                elif v_score >= 0.30:
+                    boost = 10
+                    display_score = 0.50
                 else:
-                    try:
-                        if '.' in val:
-                            cleaned_row.append(float(val))
-                        else:
-                            cleaned_row.append(int(val))
-                    except ValueError:
-                        cleaned_row.append(val)
-            final_rows.append(cleaned_row)
-        
-        return final_rows
+                    boost = 0
+                    display_score = 0.20
 
-    insert_pattern = re.compile(r"INSERT INTO `Products`.*?VALUES\s*(.*?);", re.DOTALL | re.IGNORECASE)
-    products_to_insert = []
-    seen_ids = set()
-
-    for match in insert_pattern.finditer(content):
-        values_block = match.group(1).strip()
-        rows = parse_sql_insert_values(values_block)
-        for vals in rows:
-            if len(vals) >= 24:
-                product_id = vals[0]
-                if not product_id or product_id in seen_ids:
-                    continue
-                seen_ids.add(product_id)
-
-                name = vals[2]
-                if not name:
-                    continue
-                brand = vals[5]
-                photo_json = vals[13]
-                price = vals[23] if len(vals) > 23 else 0.0
-                description = vals[21] if len(vals) > 21 else (vals[10] if len(vals) > 10 else "")
-
-                image_url = None
-                if photo_json:
-                    try:
-                        photo_list = json.loads(photo_json)
-                        if isinstance(photo_list, list) and len(photo_list) > 0:
-                            image_url = photo_list[0].get('img')
-                    except:
-                        pass
-
-                products_to_insert.append({
-                    "id": product_id,
-                    "name": name,
-                    "brand": brand,
-                    "image_url": image_url,
-                    "price": price,
-                    "rating": 4.5,
-                    "description": description
-                })
-
-    if products_to_insert:
-        print(f"Inserting {len(products_to_insert)} products into database...")
-        db.session.bulk_insert_mappings(Product, products_to_insert)
-        db.session.commit()
-        print("Database seeding completed successfully.")
-    else:
-        print("No products parsed from SQL file.")
-
+            ranked_candidates.append((boost, r['score'], {
+                "product_id": p.id,
+                "product_name": p.name,
+                "salt_name": p.salt_name,
+                "composition": p.composition,
+                "image": p.image,
+                "product_url": p.product_url,
+                "product_pricing_new": float(p.product_pricing_new) if p.product_pricing_new is not None else None,
+                "score": display_score
+            }))
+        else:
+            # Handle mapping placeholder if DB query fails to return it
+            display_score = 0.20
+            v_score = r['score']
+            if v_score >= 0.45:
+                display_score = 0.88
+            elif v_score >= 0.30:
+                display_score = 0.50
+            
+            ranked_candidates.append((0, r['score'], {
+                "product_id": p_id,
+                "product_name": f"Product #{p_id}",
+                "salt_name": None,
+                "composition": None,
+                "image": None,
+                "product_url": None,
+                "product_pricing_new": 0.0,
+                "score": display_score
+            }))
+            
+    # Sort candidates by boost descending, then raw vector score descending
+    ranked_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    
+    # Extract only the result dicts
+    sorted_results = [item[2] for item in ranked_candidates]
+    
+    # Return top 50 results (more matches so frontend columns can display full results)
+    return jsonify(sorted_results[:50])
 
 if __name__ == '__main__':
-    with app.app_context():
-        try:
-            inspector = db.inspect(db.engine)
-            tables = inspector.get_table_names()
-            needs_drop = False
-            if "products_vectors" in tables:
-                print("Migration: Old 'products_vectors' table found. Dropping tables for unified schema...")
-                needs_drop = True
-            elif "products" in tables:
-                columns = [c['name'] for c in inspector.get_columns('products')]
-                if 'vector' not in columns:
-                    print("Migration: 'vector' column missing in 'products' table. Dropping tables...")
-                    needs_drop = True
-            
-            if needs_drop:
-                db.session.execute(db.text("DROP TABLE IF EXISTS products_vectors;"))
-                db.session.execute(db.text("DROP TABLE IF EXISTS products;"))
-                db.session.commit()
-                db.drop_all()
-                print("Successfully dropped old tables.")
-        except Exception as e:
-            print(f"Error during schema migration check: {e}")
-
-        db.create_all()
-        try:
-            seed_database_from_sql()
-        except Exception as e:
-            print(f"Error seeding database: {e}")
-    
+    # Initialize Vector Search Engine on startup
     try:
         with app.app_context():
             vector_engine.load()
     except Exception as e:
         print(f"Error loading vector search engine: {e}")
         
+    # Trigger reload to load fresh FAISS index
     app.run(debug=True)

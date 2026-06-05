@@ -1,78 +1,88 @@
 import os
 import json
 import numpy as np
+import faiss
 
 class VectorSearchEngine:
-    def __init__(self, db_path=None):
+    def __init__(self):
         self.model = None
+        self.index = None
         self.product_ids = []
-        self.embeddings = None
-        self.product_names = []
-        self.image_names = []
+
+    def get_sentence_transformer_model(self):
+        # Try dynamic local cache path first to bypass network timeouts
+        user_home = os.path.expanduser('~')
+        cache_dir = os.path.join(user_home, '.cache', 'huggingface', 'hub', 'models--sentence-transformers--all-MiniLM-L6-v2', 'snapshots')
+        
+        from sentence_transformers import SentenceTransformer
+        if os.path.exists(cache_dir):
+            try:
+                snapshots = os.listdir(cache_dir)
+                for snapshot in snapshots:
+                    local_model_path = os.path.join(cache_dir, snapshot)
+                    # Ensure the snapshot actually contains model weights
+                    if os.path.exists(os.path.join(local_model_path, "model.safetensors")) or os.path.exists(os.path.join(local_model_path, "pytorch_model.bin")):
+                        print(f"Attempting to load model from local cache snapshot: {local_model_path}")
+                        return SentenceTransformer(local_model_path)
+            except Exception as e:
+                print(f"Failed to load from local cache snapshot: {e}")
+                
+        # Fallback to default online download
+        print("Falling back to downloading model 'all-MiniLM-L6-v2'...")
+        return SentenceTransformer('all-MiniLM-L6-v2')
 
     def load(self):
         print("Loading sentence-transformers model...")
         try:
-            from sentence_transformers import SentenceTransformer
-            self.model = SentenceTransformer('all-MiniLM-L6-v2')
+            if "HF_ENDPOINT" not in os.environ:
+                os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+            self.model = self.get_sentence_transformer_model()
             print("SentenceTransformer model loaded.")
-        except ImportError:
-            print("Error: sentence-transformers is not installed. Vector search will be unavailable.")
-            return
-
-        print("Loading vector database from MySQL into memory...")
-        try:
-            from models import Product
-            rows = Product.query.with_entities(
-                Product.id, 
-                Product.name, 
-                Product.image_url, 
-                Product.vector
-            ).filter(Product.vector.isnot(None)).all()
         except Exception as e:
-            print(f"Error reading MySQL vector database: {e}")
+            print(f"Error loading SentenceTransformer: {e}")
             return
 
-        if not rows:
-            print("Warning: No product vectors found in database.")
+        index_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'products.index'))
+        mapping_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'products_mapping.json'))
+
+        if not os.path.exists(index_path) or not os.path.exists(mapping_path):
+            print("Warning: FAISS index or product mapping file not found. Please run build_faiss_index.py first.")
             return
 
-        self.product_ids = []
-        self.product_names = []
-        self.image_names = []
-        vectors = []
-
-        for pid, name, img_url, vec_str in rows:
-            self.product_ids.append(pid)
-            self.product_names.append(name)
-            self.image_names.append(img_url)
-            vectors.append(json.loads(vec_str))
-
-        self.embeddings = np.array(vectors, dtype=np.float32)
-        norms = np.linalg.norm(self.embeddings, axis=1, keepdims=True)
-        norms[norms == 0] = 1.0
-        self.embeddings = self.embeddings / norms
-        print(f"Vector search engine loaded successfully with {len(self.product_ids)} items.")
+        print("Loading FAISS index and product ID mapping...")
+        try:
+            self.index = faiss.read_index(index_path)
+            with open(mapping_path, 'r', encoding='utf-8') as f:
+                self.product_ids = json.load(f)
+            print(f"FAISS index loaded successfully with {len(self.product_ids)} items.")
+        except Exception as e:
+            print(f"Error loading FAISS index: {e}")
 
     def search(self, query, top_k=10):
-        if self.model is None or self.embeddings is None:
+        if self.model is None or self.index is None or not self.product_ids:
             print("VectorSearchEngine is not fully loaded.")
             return []
 
-        query_vector = self.model.encode(query, convert_to_numpy=True)
+        # Generate query vector
+        query_vector = self.model.encode(query, convert_to_numpy=True).reshape(1, -1)
+        
+        # Normalize the query vector for cosine similarity
         norm = np.linalg.norm(query_vector)
         if norm > 0:
             query_vector = query_vector / norm
 
-        similarities = np.dot(self.embeddings, query_vector)
-        top_indices = np.argsort(similarities)[::-1][:top_k]
+        # Search the index
+        scores, indices = self.index.search(query_vector.astype(np.float32), top_k)
 
         results = []
-        for idx in top_indices:
+        for idx, score in zip(indices[0], scores[0]):
+            if idx < 0 or idx >= len(self.product_ids):
+                continue
+            
+            pid = self.product_ids[idx]
             results.append({
-                "product_id": int(self.product_ids[idx]),
-                "product_name": self.product_names[idx],
-                "score": float(similarities[idx]),
-                "image_name": self.image_names[idx]
+                "product_id": int(pid),
+                "score": float(score)
             })
         return results

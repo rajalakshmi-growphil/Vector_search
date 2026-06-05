@@ -97,7 +97,7 @@
 
         /* Search Section */
         .search-container {
-            max-width: 760px;
+            max-width: 960px;
             margin: 0 auto 50px auto;
             text-align: center;
             position: relative;
@@ -105,7 +105,7 @@
 
         .hero-title {
             font-family: var(--font-display);
-            font-size: 48px;
+            font-size: 52px;
             font-weight: 700;
             margin-bottom: 16px;
             letter-spacing: -1px;
@@ -120,24 +120,24 @@
 
         .hero-desc {
             color: var(--text-muted);
-            font-size: 16px;
+            font-size: 18px;
             margin-bottom: 35px;
             font-weight: 300;
         }
 
         .search-box-wrapper {
             position: relative;
-            border-radius: 20px;
-            padding: 2px;
+            border-radius: 24px;
+            padding: 3px;
             background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
             transition: all 0.4s ease;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
             z-index: 30;
         }
 
         .search-box-wrapper:focus-within {
             background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            box-shadow: 0 15px 40px var(--glow-color);
+            box-shadow: 0 20px 50px var(--glow-color);
             transform: translateY(-2px);
         }
 
@@ -145,8 +145,8 @@
             display: flex;
             align-items: center;
             background: #111827;
-            border-radius: 18px;
-            padding: 6px 12px;
+            border-radius: 21px;
+            padding: 8px 16px;
         }
 
         .search-box input {
@@ -155,8 +155,8 @@
             border: none;
             outline: none;
             color: var(--text-main);
-            font-size: 18px;
-            padding: 14px 10px;
+            font-size: 22px;
+            padding: 16px 12px;
             font-family: var(--font-sans);
         }
 
@@ -169,9 +169,10 @@
             border: none;
             color: white;
             font-family: var(--font-display);
+            font-size: 18px;
             font-weight: 600;
-            padding: 12px 26px;
-            border-radius: 12px;
+            padding: 15px 38px;
+            border-radius: 15px;
             cursor: pointer;
             transition: all 0.2s ease;
             display: flex;
@@ -185,10 +186,10 @@
         }
 
         .search-icon {
-            width: 20px;
-            height: 20px;
+            width: 26px;
+            height: 26px;
             fill: #4b5563;
-            margin-left: 10px;
+            margin-left: 12px;
         }
 
         /* Autocomplete Dropdown */
@@ -201,13 +202,12 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 16px;
             z-index: 50;
-            max-height: 350px;
-            overflow-y: auto;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
             display: none;
             text-align: left;
             margin-top: 10px;
             backdrop-filter: blur(12px);
+            padding: 15px;
         }
 
         .suggestion-item {
@@ -279,6 +279,61 @@
             padding: 4px 8px;
             border-radius: 6px;
             flex-shrink: 0;
+        }
+
+        /* 3-Column Dropdown Styles */
+        .dropdown-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr 1fr;
+            gap: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .dropdown-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+        }
+
+        .dropdown-col {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+            max-height: 320px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .dropdown-col-title {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--accent-secondary);
+            padding-bottom: 6px;
+            border-bottom: 1.5px solid rgba(6, 182, 212, 0.20);
+            margin-bottom: 8px;
+            font-family: var(--font-display);
+            position: sticky;
+            top: 0;
+            background: #111827;
+            z-index: 10;
+        }
+
+        /* Scrollbar styles for the columns */
+        .dropdown-col::-webkit-scrollbar {
+            width: 4px;
+        }
+        .dropdown-col::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .dropdown-col::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 2px;
+        }
+        .dropdown-col::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
         }
 
         /* Suggestion Chips */
@@ -849,15 +904,34 @@
 
         function renderResults(products) {
             resultsGrid.innerHTML = '';
-            products.forEach(p => {
+            
+            // Filter out products with N/A price (null, 0, or undefined)
+            const filteredProducts = products.filter(p => {
+                const price = p.product_pricing_new || p.price;
+                return price !== null && price !== undefined && parseFloat(price) > 0;
+            });
+
+            // Update the matches count dynamically based on the filtered list
+            const currentText = resultsCount.textContent;
+            const durationMatch = currentText.match(/\(([^)]+)\)/);
+            const durationStr = durationMatch ? ` (${durationMatch[1]})` : '';
+            resultsCount.textContent = `${filteredProducts.length} matches found${durationStr}`;
+
+            if (filteredProducts.length === 0) {
+                renderNoResults();
+                return;
+            }
+
+            filteredProducts.forEach(p => {
                 const card = document.createElement('div');
                 card.className = 'card';
                 card.onclick = () => showProductDetails(p);
 
                 // Setup image
                 let imgHTML = `<svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 10.5C3.67 10.5 3 11.17 3 12C3 12.83 3.67 13.5 4.5 13.5M19.5 10.5C18.67 10.5 18 11.17 18 12M12 6C8.69 6 6 8.69 6 12M12 15.5C10.07 15.5 8.5 13.93 8.5 12C8.5 10.07 10.07 8.5 12 8.5C13.93 8.5 15.5 10.07 15.5 12C15.5 13.93 13.93 15.5 12 15.5Z" /></svg>`;
-                if (p.image_url) {
-                    imgHTML = `<img src="https://static.growphil.com/medingen/${p.image_url}" class="card-img" onerror="this.outerHTML='<svg class=\\'placeholder-icon\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\\' /></svg>'">`;
+                const imgUrl = p.image || p.image_url;
+                if (imgUrl) {
+                    imgHTML = `<img src="https://d1dh0rr5xj2p49.cloudfront.net/products/${imgUrl}" class="card-img" onerror="this.outerHTML='<svg class=\\'placeholder-icon\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\\' /></svg>'">`;
                 }
 
                 // Setup score badge if score exists
@@ -869,15 +943,15 @@
                         ${scoreHTML}
                     </div>
                     <div class="card-content">
-                        <div class="card-brand">${p.brand || 'MEDINGEN'}</div>
-                        <h3 class="card-title">${p.name}</h3>
-                        <p class="card-desc">${p.description || 'No description available for this product.'}</p>
-                        <div class="card-footer">
-                            <span class="card-price">${formatPrice(p.price)}</span>
-                            <span class="card-rating">
-                                <svg class="star-icon" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                                ${parseFloat(p.rating || 4.5).toFixed(1)}
-                            </span>
+                        <h3 class="card-title" style="margin-bottom: 8px; height: auto; -webkit-line-clamp: 2;">${p.product_name || p.name}</h3>
+                        <div class="card-salt" style="font-size: 13px; color: var(--accent-secondary); font-weight: 600; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            <span style="color: var(--text-muted); font-size: 11px; font-weight: 500; text-transform: uppercase;">Salt:</span> ${p.salt_name || 'N/A'}
+                        </div>
+                        <div class="card-comp" style="font-size: 12px; color: var(--text-muted); margin-bottom: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            <span style="color: var(--text-muted); font-size: 11px; font-weight: 500; text-transform: uppercase;">Comp:</span> ${p.composition || 'N/A'}
+                        </div>
+                        <div class="card-footer" style="padding-top: 12px;">
+                            <span class="card-price">${formatPrice(p.product_pricing_new || p.price)}</span>
                         </div>
                     </div>
                 `;
@@ -888,15 +962,16 @@
         async function showProductDetails(p) {
             // Setup Modal Image
             let imgHTML = `<svg class="placeholder-icon" style="width:80px;height:80px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 10.5C3.67 10.5 3 11.17 3 12C3 12.83 3.67 13.5 4.5 13.5M19.5 10.5C18.67 10.5 18 11.17 18 12M12 6C8.69 6 6 8.69 6 12M12 15.5C10.07 15.5 8.5 13.93 8.5 12C8.5 10.07 10.07 8.5 12 8.5C13.93 8.5 15.5 10.07 15.5 12C15.5 13.93 13.93 15.5 12 15.5Z" /></svg>`;
-            if (p.image_url) {
-                imgHTML = `<img src="https://static.growphil.com/medingen/${p.image_url}" class="modal-img" onerror="this.outerHTML='<svg class=\\'placeholder-icon\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\\' /></svg>'">`;
+            const imgUrl = p.image || p.image_url;
+            if (imgUrl) {
+                imgHTML = `<img src="https://d1dh0rr5xj2p49.cloudfront.net/products/${imgUrl}" class="modal-img" onerror="this.outerHTML='<svg class=\\'placeholder-icon\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\\' /></svg>'">`;
             }
             modalImgContainer.innerHTML = imgHTML;
 
             // Fill text values
             modalBrand.textContent = p.brand || 'MEDINGEN';
-            modalTitle.textContent = p.name;
-            modalPrice.textContent = formatPrice(p.price);
+            modalTitle.textContent = p.product_name || p.name;
+            modalPrice.textContent = formatPrice(p.product_pricing_new || p.price);
             
             modalRating.innerHTML = `
                 <svg class="star-icon" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
@@ -906,7 +981,7 @@
             modalDesc.textContent = p.description || 'No detailed specifications or uses provided.';
 
             // Populate Specs
-            modalSpecs.textContent = `Product ID: ${p.id} | Brand: ${p.brand || 'N/A'}`;
+            modalSpecs.textContent = `Product ID: ${p.product_id || p.id} | Brand: ${p.brand || 'N/A'}`;
 
 
 
@@ -957,49 +1032,151 @@
                     return;
                 }
                 
-                renderAutocompleteDropdown(data.slice(0, 5)); // show top 5 matches
+                renderAutocompleteDropdown(data); // show all matches
             } catch (err) {
                 console.error("Autocomplete fetch failed:", err);
             }
         }
 
-        // Render dropdown items
+        // Render dropdown items in 3 different columns (Product Name, Salt Name, Composition)
         function renderAutocompleteDropdown(suggestions) {
             autocompleteDropdown.innerHTML = '';
             
+            // Get unique products by name
+            const uniqueProducts = [];
+            const seenProductNames = new Set();
+            
+            // Get unique salts
+            const uniqueSalts = [];
+            const seenSalts = new Set();
+            
+            // Get unique compositions
+            const uniqueCompositions = [];
+            const seenCompositions = new Set();
+            
             suggestions.forEach(p => {
-                const item = document.createElement('div');
-                item.className = 'suggestion-item';
-                
-                // Clicking an item opens details AND fills/runs background search!
-                item.onclick = (e) => {
-                    e.stopPropagation();
-                    searchInput.value = p.name;
-                    autocompleteDropdown.style.display = 'none';
-                    performSearch(); // update background results
-                    showProductDetails(p); // open modal immediately
-                };
-
-                // Setup small image thumbnail or generic icon
-                let imgHTML = `<svg class="placeholder-icon" style="width:20px;height:20px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 10.5C3.67 10.5 3 11.17 3 12C3 12.83 3.67 13.5 4.5 13.5M19.5 10.5C18.67 10.5 18 11.17 18 12M12 6C8.69 6 6 8.69 6 12M12 15.5C10.07 15.5 8.5 13.93 8.5 12C8.5 10.07 10.07 8.5 12 8.5C13.93 8.5 15.5 10.07 15.5 12C15.5 13.93 13.93 15.5 12 15.5Z" /></svg>`;
-                if (p.image_url) {
-                    imgHTML = `<img src="https://static.growphil.com/medingen/${p.image_url}" class="sugg-img" onerror="this.outerHTML='<svg class=\\'placeholder-icon\\' style=\\'width:20px;height:20px\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\\' /></svg>'">`;
+                const pName = p.product_name || p.name;
+                if (pName && !seenProductNames.has(pName)) {
+                    seenProductNames.add(pName);
+                    uniqueProducts.push(p);
                 }
-
-                item.innerHTML = `
-                    <div class="sugg-img-container">
-                        ${imgHTML}
-                    </div>
-                    <div class="sugg-text">
-                        <div class="sugg-title">${p.name}</div>
-                        <div class="sugg-brand">${p.brand || 'Medingen Product'}</div>
-                    </div>
-                    <div class="sugg-score">${(p.score * 100).toFixed(0)}% match</div>
-                `;
                 
-                autocompleteDropdown.appendChild(item);
+                const sName = p.salt_name;
+                if (sName && !seenSalts.has(sName)) {
+                    seenSalts.add(sName);
+                    uniqueSalts.push(p);
+                }
+                
+                const comp = p.composition;
+                if (comp && !seenCompositions.has(comp)) {
+                    seenCompositions.add(comp);
+                    uniqueCompositions.push(p);
+                }
             });
             
+            // Create grid container
+            const grid = document.createElement('div');
+            grid.className = 'dropdown-grid';
+            
+            // Column 1: Products
+            const colProducts = document.createElement('div');
+            colProducts.className = 'dropdown-col';
+            colProducts.innerHTML = `<div class="dropdown-col-title">Product Name</div>`;
+            
+            if (uniqueProducts.length === 0) {
+                colProducts.innerHTML += `<div style="padding:10px; font-size:13px; color:var(--text-muted);">No products</div>`;
+            } else {
+                uniqueProducts.forEach(p => {
+                    const item = document.createElement('div');
+                    item.className = 'suggestion-item';
+                    item.onclick = (e) => {
+                        e.stopPropagation();
+                        searchInput.value = p.product_name || p.name;
+                        autocompleteDropdown.style.display = 'none';
+                        performSearch();
+                        showProductDetails(p);
+                    };
+                    
+                    let imgHTML = `<svg class="placeholder-icon" style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 10.5C3.67 10.5 3 11.17 3 12C3 12.83 3.67 13.5 4.5 13.5M19.5 10.5C18.67 10.5 18 11.17 18 12M12 6C8.69 6 6 8.69 6 12M12 15.5C10.07 15.5 8.5 13.93 8.5 12C8.5 10.07 10.07 8.5 12 8.5C13.93 8.5 15.5 10.07 15.5 12C15.5 13.93 13.93 15.5 12 15.5Z" /></svg>`;
+                    const imgUrl = p.image || p.image_url;
+                    if (imgUrl) {
+                        imgHTML = `<img src="https://d1dh0rr5xj2p49.cloudfront.net/products/${imgUrl}" class="sugg-img" onerror="this.outerHTML='<svg class=\\'placeholder-icon\\' style=\\'width:16px;height:16px\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\\' /></svg>'">`;
+                    }
+                    
+                    item.innerHTML = `
+                        <div class="sugg-img-container" style="width:30px; height:30px;">
+                            ${imgHTML}
+                        </div>
+                        <div class="sugg-text">
+                            <div class="sugg-title" style="font-size:13px;">${p.product_name || p.name}</div>
+                        </div>
+                        <div class="sugg-score" style="font-size:10px; padding:2px 5px;">${(p.score * 100).toFixed(0)}%</div>
+                    `;
+                    colProducts.appendChild(item);
+                });
+            }
+            
+            // Column 2: Salts
+            const colSalts = document.createElement('div');
+            colSalts.className = 'dropdown-col';
+            colSalts.innerHTML = `<div class="dropdown-col-title">Salt Name</div>`;
+            
+            if (uniqueSalts.length === 0) {
+                colSalts.innerHTML += `<div style="padding:10px; font-size:13px; color:var(--text-muted);">No salts</div>`;
+            } else {
+                uniqueSalts.forEach(p => {
+                    const item = document.createElement('div');
+                    item.className = 'suggestion-item';
+                    item.onclick = (e) => {
+                        e.stopPropagation();
+                        searchInput.value = p.salt_name;
+                        autocompleteDropdown.style.display = 'none';
+                        performSearch();
+                    };
+                    
+                    item.innerHTML = `
+                        <div class="sugg-text">
+                            <div class="sugg-title" style="font-size:13px; color:var(--accent-secondary); font-weight:600;">${p.salt_name}</div>
+                        </div>
+                        <div class="sugg-score" style="font-size:10px; padding:2px 5px;">${(p.score * 100).toFixed(0)}%</div>
+                    `;
+                    colSalts.appendChild(item);
+                });
+            }
+            
+            // Column 3: Composition
+            const colCompositions = document.createElement('div');
+            colCompositions.className = 'dropdown-col';
+            colCompositions.innerHTML = `<div class="dropdown-col-title">Composition</div>`;
+            
+            if (uniqueCompositions.length === 0) {
+                colCompositions.innerHTML += `<div style="padding:10px; font-size:13px; color:var(--text-muted);">No compositions</div>`;
+            } else {
+                uniqueCompositions.forEach(p => {
+                    const item = document.createElement('div');
+                    item.className = 'suggestion-item';
+                    item.onclick = (e) => {
+                        e.stopPropagation();
+                        searchInput.value = p.composition;
+                        autocompleteDropdown.style.display = 'none';
+                        performSearch();
+                    };
+                    
+                    item.innerHTML = `
+                        <div class="sugg-text">
+                            <div class="sugg-title" style="font-size:13px; font-weight:500;">${p.composition}</div>
+                        </div>
+                        <div class="sugg-score" style="font-size:10px; padding:2px 5px;">${(p.score * 100).toFixed(0)}%</div>
+                    `;
+                    colCompositions.appendChild(item);
+                });
+            }
+            
+            grid.appendChild(colProducts);
+            grid.appendChild(colSalts);
+            grid.appendChild(colCompositions);
+            
+            autocompleteDropdown.appendChild(grid);
             autocompleteDropdown.style.display = 'block';
         }
 
