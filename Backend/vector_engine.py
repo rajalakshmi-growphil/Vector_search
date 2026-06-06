@@ -86,3 +86,4 @@ class VectorSearchEngine:
                 "score": float(score)
             })
         return results
+
