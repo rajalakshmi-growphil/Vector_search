@@ -57,7 +57,6 @@ def search_products():
     if not query:
         return jsonify([])
 
-    original_query = query
     oq_lower = query.lower()
     
     try:
