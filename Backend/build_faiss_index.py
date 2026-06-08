@@ -133,5 +133,16 @@ def main():
 
     print("FAISS indexing completed successfully!")
 
+    print("Uploading FAISS index and mapping to S3...")
+    try:
+        import boto3
+        bucket_name = os.environ.get('S3_BUCKET_NAME', 'medingen-in-new-2025')
+        s3_client = boto3.client('s3', region_name='ap-south-1')
+        s3_client.upload_file(index_path, bucket_name, 'vector_search/products.index')
+        s3_client.upload_file(mapping_path, bucket_name, 'vector_search/products_mapping.json')
+        print(f"Successfully uploaded FAISS index and mapping files to S3 bucket '{bucket_name}'!")
+    except Exception as e:
+        print(f"Error uploading files to S3: {e}")
+
 if __name__ == "__main__":
     main()

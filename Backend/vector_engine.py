@@ -46,6 +46,18 @@ class VectorSearchEngine:
         index_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'products.index'))
         mapping_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'products_mapping.json'))
 
+        # Download from S3 to local path
+        bucket_name = os.environ.get('S3_BUCKET_NAME', 'medingen-in-new-2025')
+        print(f"Checking/Downloading FAISS index files from S3 bucket '{bucket_name}'...")
+        try:
+            import boto3
+            s3_client = boto3.client('s3', region_name='ap-south-1')
+            s3_client.download_file(bucket_name, 'vector_search/products.index', index_path)
+            s3_client.download_file(bucket_name, 'vector_search/products_mapping.json', mapping_path)
+            print("FAISS index files downloaded successfully from S3.")
+        except Exception as e:
+            print(f"Warning: Failed to download FAISS index from S3 ({e}). Using local fallback if available.")
+
         if not os.path.exists(index_path) or not os.path.exists(mapping_path):
             print("Warning: FAISS index or product mapping file not found. Please run build_faiss_index.py first.")
             return

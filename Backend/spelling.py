@@ -18,7 +18,10 @@ class SpellingCorrector:
         print("SpellingCorrector: Loading vocabulary from database...")
         try:
             conn = self.db_conn_fn()
-            cursor = conn.cursor(dictionary=True)
+            try:
+                cursor = conn.cursor(dictionary=True)
+            except TypeError:
+                cursor = conn.cursor()
             cursor.execute("SELECT name, salt_name FROM products")
             rows = cursor.fetchall()
             cursor.close()
@@ -88,6 +91,11 @@ class SpellingCorrector:
                     
                     # Find closest match with a minimum similarity cutoff of 0.7
                     matches = difflib.get_close_matches(token_lower, candidates, n=1, cutoff=0.7)
+                    if not matches:
+                        # Fallback: search entire vocabulary with a slightly lower cutoff (0.6)
+                        # to match misspelled first letter, insertions, or deletions.
+                        matches = difflib.get_close_matches(token_lower, self.vocab_words, n=1, cutoff=0.6)
+                        
                     if matches:
                         corrected = matches[0]
                         # Retain capitalization of original token if possible
